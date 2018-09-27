@@ -1,0 +1,14 @@
+<table>
+	<tr>
+		<th> Patient ID </th>
+		<th> Prediction </th>
+	</tr>
+
+
+{% for patient in display_table %}
+	<tr>
+	<td>{{ loop.index }}</td> <td>{{ patient.prediction }}</td>
+	</tr>
+{% endfor %}
+</table>
+
