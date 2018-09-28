@@ -1,14 +1,31 @@
-<table>
+<!DOCTYPE html>
+<html>
+<head>
+<title>Flask app</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='css/bootstrap.min.css') }}">
+</head>
+<body>
+
+
+<div class="container">
+<div class="row justify-content-md-center">
+<div class="col-6">
+<h1 class="display-4 text-center">Vulcan</h1>
+<h5 class="text-center">Intensive Care Unit Dashboard</h2>
+<br>
+<table class="table table-hover table-sm">
 	<tr>
 		<th> Patient ID </th>
 		<th> Prediction </th>
 	</tr>
-
-
 {% for patient in display_table %}
 	<tr>
 	<td>{{ loop.index }}</td> <td>{{ patient.prediction }}</td>
 	</tr>
 {% endfor %}
 </table>
-
+</div>
+</div>
+</div>	
+</body>
+</html>
