@@ -12,7 +12,6 @@ def predict(feature_vector):
     
     params=model.coef_
     
-    
     #Get top 5 reasons
     weights=pd.DataFrame(feature_vector*params)
     mean_weights=float(weights.mean(axis=1))
