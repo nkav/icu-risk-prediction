@@ -1,96 +1,102 @@
 import pickle
 import pandas as pd
-import numpy as np
 import math
+import matplotlib.pyplot as plt 
+
+#Max number of iterations
+num_iterations = 35
+
+#Change directory to where the data is
+import os
+os.chdir("../chartlabdata-any")
 
 #Import the data to be fit
-picklejar = pickle.load(open("data.pkl",'rb'))  
-chartlabdata=picklejar[0]
-
-#Some of the age's are listed as 300! Delete them
-chartlabdata = chartlabdata[chartlabdata.age != 300]
-
-#Some creatinine levels are listed as nan! Delete them
-chartlabdata = chartlabdata[(chartlabdata.Creatinine) < 10**6]
+wholedata=pickle.load(open("whole-dataset.pkl",'rb'))
 
 #Set up data to be fit by LogReg
-y = chartlabdata["expire"]
+y = wholedata["expire"]
 
-#Prepare the set of features
-age_norm = (chartlabdata["age"]-chartlabdata["age"].mean())/chartlabdata["age"].std()
-creatinine_norm = (chartlabdata["Creatinine"]-chartlabdata["Creatinine"].mean())/chartlabdata["Creatinine"].std()
+#Add a column of ones, for the coefficient in Logistic Regression
+wholedata["constants"]=1
 
-#Use one hot encoding for gender
-gender_one=[]
-for patientnum in range(len(age_norm)):
-    if chartlabdata["gender"].iloc[patientnum]=="M":
-        gender_one.append(1)
-    else:
-        gender_one.append(0)
+#Specify all columns of data other than subject_id and expire flag
+X=wholedata.iloc[:,2:]
 
-#Make a vector of ones for the constant in Logistic Regression
-coeffs=np.ones([len(gender_one)])
-
-#Make these into feature list
-X=np.array([chartlabdata["patient"],age_norm,creatinine_norm,gender_one,coeffs]).T
+from sklearn import preprocessing
+#scaler = preprocessing.StandardScaler(copy=True, with_mean=True, with_std=True).fit(X)
+#X=scaler.transform(X)
+#X=pd.DataFrame(X)
+#X = preprocessing.scale(X)
+#X=pd.DataFrame(X)
 
 # Splitting the dataset randomly into the Training set and Test set
 from sklearn.cross_validation import train_test_split
 X_train, X_test, y_train, y_test = train_test_split(X, y, test_size = 0.2, random_state = 0)
 
-#Importing statsmodels
+##Importing statsmodels
 import statsmodels.api as sm
 import statsmodels.formula.api as smf
 
 #Calling an instance of the logit model
-logit_model=sm.Logit(y_train,X_train[:,1:])
+logit_model=sm.Logit(y_train,X_train)
 
 #Fit the logit model
-result=logit_model.fit(method='bfgs', maxiter = 100)
-
-#Print the results of the fit
+result=logit_model.fit(method='bfgs', maxiter = num_iterations)
 print(result.summary())
 
-#Predict the outcomes of the patients in the test set
-y_predict = result.predict(X_test[:,1:])
+y_predict = result.predict(X_test)
 
-#Build a matrix for comparing results
-compare = np.array([y_test,y_predict]).T
+#Calculate model metrics
+from sklearn.metrics import confusion_matrix
+decision_cutoffs=[0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9]
+print("Calculating sensitivity (true pos rate), specificity/selectivity (true neg rate), false pos rate, false neg rate, and accuracy")
+for cutoff in decision_cutoffs:
+    tn, fp, fn, tp = confusion_matrix(y_test, (y_predict>cutoff)*1).ravel()
+    p=fn+tp
+    n=fp+tn
+    tpr=tp/p
+    tnr=tn/n
+    fpr=1-tpr
+    fnr=1-tnr
+    acc=(tp+tn)/(p+n)
+    print("For cutoff of ",cutoff,': ',tpr,' ',tnr,' ',fpr,' ',fnr,' ',acc)
 
-#Calculate Area Under Receiver Operating Curve (AUROC)
-falseneg=[]
-falsepos=[]
-decisionboundaries=np.linspace(0,1,num=51)
-for boundary in range(len(decisionboundaries)):
-    falseneg.append(0)
-    falsepos.append(0)
-    for patient in range(len(compare)):
-        if (compare[patient][0]==1) and (compare[patient][1]<decisionboundaries[boundary]):
-            falseneg[boundary]=falseneg[boundary]+1
-        elif (compare[patient][0]==0) and (compare[patient][1]>decisionboundaries[boundary]):
-            falsepos[boundary]=falsepos[boundary]+1
-falsenegrate=np.array(falseneg)/falseneg[-1]
-falseposrate=np.array(falsepos)/falsepos[0]
-trueposrate=1-falseposrate
+#Calculate Confusion matrix, ROC and AUROC
+from sklearn.linear_model import LogisticRegression
+from sklearn import metrics
 
-#Make a plot of the ROC
-import matplotlib as plt
-import matplotlib.pyplot as plt
+logreg = LogisticRegression(max_iter = num_iterations, penalty = "l2")
+logreg.fit(X_train, y_train)
 
-fig, ax = plt.subplots()
-ax.plot(trueposrate, falsenegrate,color='green', marker='o', linestyle='dashed', linewidth=2, markersize=12)
+y_predict = logreg.predict(X_test)
 
-ax.set(xlabel='False Positive Rate', ylabel='True Positive Rate', title='Receiver Operator Curve')
-ax.grid()
+conf_matrix = confusion_matrix(y_test, (y_predict>0.5)*1)
 
-#Save a copy of this plot
-fig.savefig("test.png")
+from sklearn.metrics import roc_auc_score
+from sklearn.metrics import roc_curve
+logit_roc_auc = logreg.score(X_test, y_test)
+fpr, tpr, thresholds = roc_curve(y_test, logreg.predict_proba(X_test)[:,1])
+plt.figure()
+plt.plot(fpr, tpr)
+plt.plot([0, 1], [0, 1],'r--')
+plt.xlim([0.0, 1.0])
+plt.ylim([0.0, 1.05])
+plt.xlabel('False Positive Rate')
+plt.ylabel('True Positive Rate')
+plt.title('Receiver operating characteristic')
+plt.legend(loc="lower right")
+plt.savefig('ROC.png', format='png')
 plt.show()
 
-#Save the model and save results for ten people
-X_ten=X_train[0:10,:]
-y_ten=y_train[0:10]
+#Calculate AUROC
+auroc=roc_auc_score(y_test, y_predict)
+print("The area under the ROC curve = ",auroc)
 
-pickle_jar=[result,X_ten,y_ten]
+#Save the model and save results for ten people
+X_ten=X_train.iloc[0:10,:]
+y_ten=y_train.iloc[0:10]
+patients=wholedata["subject_id"].iloc[0:10]
+pickle_jar=[logreg,X_ten,y_ten,patients]
+
 pickle.dump(pickle_jar, open("model.pkl",'wb') )
 
